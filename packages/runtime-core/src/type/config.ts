@@ -132,6 +132,21 @@ export type ShareInfos = {
   [pkgName: string]: Shared[];
 };
 
+export interface AssetRequestContext {
+  /**
+   * Identifies the consumer that provided these options. A container shared by
+   * several consumers refuses options from a different `consumerId` instead of
+   * replacing the first consumer's.
+   */
+  consumerId?: string;
+  /**
+   * Performs a request for one of the container's assets, for example to
+   * attach an `Authorization` header. Called per request so tokens can be
+   * refreshed.
+   */
+  request?: (url: string, init?: RequestInit) => Promise<Response>;
+}
+
 export interface Options {
   id?: string;
   name: string;
@@ -141,6 +156,15 @@ export interface Options {
   plugins: Array<ModuleFederationRuntimePlugin>;
   inBrowser: boolean;
   shareStrategy?: ShareStrategy;
+  /**
+   * The context a consumer handed to this container through
+   * `RemoteEntryInitOptions.assetRequestContext`. The container's bundler
+   * runtime passes it to `initOptions`, so a runtime plugin on the container
+   * reads it as `userOptions.assetRequestContext` in `beforeInit`. A host does
+   * not set it; its own runtime plugin passes the context to each remote in
+   * `beforeInitContainer`.
+   */
+  assetRequestContext?: AssetRequestContext;
 }
 
 export type UserOptions = Omit<
@@ -161,6 +185,12 @@ export type RemoteEntryInitOptions = {
   version: string;
   shareScopeMap?: ShareScopeMap;
   shareScopeKeys: string | string[];
+  /**
+   * Set by a consumer's runtime plugin in `beforeInitContainer`. The runtime
+   * passes it to the container's `init` unchanged; the container's bundler
+   * runtime decides how to use it.
+   */
+  assetRequestContext?: AssetRequestContext;
 };
 
 export type InitTokens = Record<string, Record<string, any>>;

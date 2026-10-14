@@ -27,6 +27,7 @@ export {
 } from './global';
 export type {
   UserOptions,
+  AssetRequestContext,
   ModuleFederationRuntimePlugin,
   RuntimePluginHooks,
 } from './type';

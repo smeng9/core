@@ -21,6 +21,7 @@ export {
   type ModuleFederationRuntimePlugin,
   type RuntimePluginHooks,
   type Federation,
+  type AssetRequestContext,
 } from '@module-federation/runtime-core';
 
 export { ModuleFederation };
