@@ -5,6 +5,7 @@ import {
 } from '@module-federation/runtime';
 import { ShareArgs } from '@module-federation/runtime/types';
 import helpers from '@module-federation/runtime/helpers';
+import { assetRequestContextProducerPlugin } from './assetRequestContext';
 
 declare const FEDERATION_OPTIMIZE_NO_SHARED: boolean;
 
@@ -135,5 +136,8 @@ export function init({ webpackRequire }: { webpackRequire: WebpackRequire }) {
     initOptions.plugins ||= [];
     initOptions.plugins.push(treeShakingSharePlugin());
   }
+  // Every build can be a producer, including one that consumes no remotes.
+  initOptions.plugins ||= [];
+  initOptions.plugins.push(assetRequestContextProducerPlugin(webpackRequire));
   return runtime!.init(initOptions);
 }

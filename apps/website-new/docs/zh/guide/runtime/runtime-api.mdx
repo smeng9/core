@@ -986,3 +986,76 @@ preloadRemote([
   ```
   </Tab>
 </Tabs>
+
+## 需要鉴权的远程资源
+
+使用 webpack 和 rspack 的 bundler runtime 时，host 可以通过自己的 `request` 函数请求远程模块的文件，例如添加 `Authorization` 请求头。在 host 中编写一个运行时插件，并通过 [`runtimePlugins`](/configure/runtimeplugins.html) 注册：
+
+```ts title="authPlugin.ts"
+import type { ModuleFederationRuntimePlugin } from '@module-federation/enhanced/runtime';
+import {
+  loadEntryWithRequest,
+  loadScriptEntryWithRequest,
+} from '@module-federation/webpack-bundler-runtime';
+import { getToken } from './auth';
+
+const REMOTE_ORIGIN = 'https://remote.example.com';
+
+const context = {
+  consumerId: 'host',
+  request: async (url: string, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers);
+    if (new URL(url).origin === REMOTE_ORIGIN) {
+      headers.set('Authorization', `Bearer ${await getToken()}`);
+    }
+    return fetch(url, { ...init, headers });
+  },
+};
+
+export default function authPlugin(): ModuleFederationRuntimePlugin {
+  return {
+    name: 'auth-plugin',
+    // mf-manifest.json
+    fetch(url, init) {
+      return context.request(url, init);
+    },
+    // remoteEntry
+    async loadEntry({ remoteInfo, remoteEntryExports }) {
+      if (remoteEntryExports) return remoteEntryExports;
+      const { entry, name, type, entryGlobalName } = remoteInfo;
+      if (type === 'esm' || type === 'module') {
+        return loadEntryWithRequest({ entry, name, request: context.request });
+      }
+      return loadScriptEntryWithRequest({
+        entry,
+        name,
+        globalName: entryGlobalName,
+        request: context.request,
+      });
+    },
+    // 远程模块的 JS 和 CSS chunk
+    beforeInitContainer(args) {
+      args.remoteEntryInitOptions.assetRequestContext ??= context;
+      return args;
+    },
+  };
+}
+```
+
+- `fetch` 请求 `mf-manifest.json`。
+- `loadEntry` 请求 remoteEntry。`loadEntryWithRequest` 加载 `module`/`esm` 类型的 entry；`loadScriptEntryWithRequest` 加载 script 类型的 entry（`var`、`global` 等），并从 `globalName` 读取容器。加载失败时两者都会抛出 RUNTIME-008，因此 `loadEntryError` 处理函数（例如重试插件）仍会执行。remoteEntry 文件可以公开访问时，可以省略 `loadEntry`。
+- `beforeInitContainer` 把 context 传给远程容器的 `init`。远程模块的 bundler runtime 随后通过 `request` 请求自己的 JS chunk 和 CSS chunk（mini-css-extract-plugin、`CssExtractRspackPlugin`、原生 CSS）。
+- 在远程模块一侧，bundler runtime 通过 `initOptions` 把 context 交给容器的 federation 实例，因此注册在远程模块上的 runtime 插件可以在 `beforeInit` 中通过 `args.userOptions.assetRequestContext` 读取它。bundler runtime 自带的插件就在这里安装它。host 不需要在自己的实例上设置 `assetRequestContext`。
+- 这些 hook 加载的所有 URL 都会传给 `request`，包括其他源的 URL，因此添加凭证前请先检查 origin。
+- 同时也是 host 的远程模块不会把 context 转发给它自己的远程模块。如果它的远程模块也需要鉴权，请在该远程模块中也注册插件。
+- 从 `@module-federation/webpack-bundler-runtime` 导入这些辅助函数。请把它加入依赖，版本与 `@module-federation/enhanced` 或 `@module-federation/rspack` 使用的版本一致。
+
+```ts
+interface AssetRequestContext {
+  // 消费者（host）的标识。被多个 host 共享的远程模块会保留第一个 consumerId 的
+  // context，并忽略 consumerId 不同的 context。
+  consumerId?: string;
+  // 每次资源请求都会调用，因此可以在两次请求之间刷新 token。
+  request?: (url: string, init?: RequestInit) => Promise<Response>;
+}
+```

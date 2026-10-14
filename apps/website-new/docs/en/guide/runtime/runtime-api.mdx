@@ -986,3 +986,76 @@ By default, the runtime records each JS and CSS URL before starting its preload.
   ```
   </Tab>
 </Tabs>
+
+## Remote assets that require authentication
+
+With the webpack and rspack bundler runtime, a host can request a remote's files through its own `request` function, for example to add an `Authorization` header. Write a runtime plugin in the host and register it with [`runtimePlugins`](/configure/runtimeplugins.html):
+
+```ts title="authPlugin.ts"
+import type { ModuleFederationRuntimePlugin } from '@module-federation/enhanced/runtime';
+import {
+  loadEntryWithRequest,
+  loadScriptEntryWithRequest,
+} from '@module-federation/webpack-bundler-runtime';
+import { getToken } from './auth';
+
+const REMOTE_ORIGIN = 'https://remote.example.com';
+
+const context = {
+  consumerId: 'host',
+  request: async (url: string, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers);
+    if (new URL(url).origin === REMOTE_ORIGIN) {
+      headers.set('Authorization', `Bearer ${await getToken()}`);
+    }
+    return fetch(url, { ...init, headers });
+  },
+};
+
+export default function authPlugin(): ModuleFederationRuntimePlugin {
+  return {
+    name: 'auth-plugin',
+    // mf-manifest.json
+    fetch(url, init) {
+      return context.request(url, init);
+    },
+    // remote entry
+    async loadEntry({ remoteInfo, remoteEntryExports }) {
+      if (remoteEntryExports) return remoteEntryExports;
+      const { entry, name, type, entryGlobalName } = remoteInfo;
+      if (type === 'esm' || type === 'module') {
+        return loadEntryWithRequest({ entry, name, request: context.request });
+      }
+      return loadScriptEntryWithRequest({
+        entry,
+        name,
+        globalName: entryGlobalName,
+        request: context.request,
+      });
+    },
+    // the remote's JS and CSS chunks
+    beforeInitContainer(args) {
+      args.remoteEntryInitOptions.assetRequestContext ??= context;
+      return args;
+    },
+  };
+}
+```
+
+- `fetch` requests `mf-manifest.json`.
+- `loadEntry` requests the remote entry. `loadEntryWithRequest` loads `module`/`esm` entries; `loadScriptEntryWithRequest` loads script entries (`var`, `global`, ...) and reads the container from `globalName`. Both reject with RUNTIME-008 when loading fails, so `loadEntryError` handlers such as the retry plugin still run. Omit `loadEntry` when the remote entry file is public.
+- `beforeInitContainer` passes the context to the remote container's `init`. The remote's bundler runtime then requests its JS chunks and CSS chunks (mini-css-extract-plugin, `CssExtractRspackPlugin`, native CSS) through `request`.
+- On the remote, the bundler runtime passes the context to the container's federation instance through `initOptions`, so a runtime plugin registered on the remote can read it as `args.userOptions.assetRequestContext` in `beforeInit`. The bundler runtime's own plugin installs it there. A host does not set `assetRequestContext` on its own instance.
+- `request` receives every URL these hooks load, including URLs on other origins, so check the origin before adding credentials.
+- A remote that is also a host does not forward the context to its own remotes. Register a plugin in that remote too if its remotes need authentication.
+- Import the helpers from `@module-federation/webpack-bundler-runtime`. Add it to your dependencies with the version your `@module-federation/enhanced` or `@module-federation/rspack` uses.
+
+```ts
+interface AssetRequestContext {
+  // Identifies the host. A remote shared by several hosts keeps the context
+  // of the first consumerId and ignores a context with a different one.
+  consumerId?: string;
+  // Called for each asset request, so a token can be refreshed between calls.
+  request?: (url: string, init?: RequestInit) => Promise<Response>;
+}
+```

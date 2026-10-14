@@ -112,6 +112,12 @@ export type InitializeSharingData = WithStatus<{
   uniqueName: string;
 }>;
 
+// The event webpack's script loader (`__webpack_require__.l`) passes to `done`.
+export type WebpackLoadScriptEvent = {
+  type: string;
+  target?: { src?: string };
+};
+
 export interface WebpackRequire {
   (moduleId: string | number): any;
   p: string;
@@ -127,6 +133,18 @@ export interface WebpackRequire {
   ) => ReturnType<typeof initializeSharing>;
   S?: InferredGlobalShareScope;
   federation: Federation;
+  // Script loader used by JSONP chunk loading.
+  l?: (
+    url: string,
+    done: (event?: WebpackLoadScriptEvent) => void,
+    key?: string,
+    chunkId?: string | number,
+  ) => void;
+  // Ensure-chunk handlers, e.g. `j` (JS), `miniCss`, `css`.
+  f?: Record<
+    string,
+    (chunkId: string | number, promises: Promise<any>[]) => void
+  >;
   consumesLoadingData?: ConsumesLoadingData;
   remotesLoadingData?: RemotesLoadingData;
   initializeSharingData?: InitializeSharingData;
@@ -245,6 +263,7 @@ export interface Federation {
   };
   attachShareScopeMap?: typeof attachShareScopeMap;
   hasAttachShareScopeMap?: boolean;
+  hasAssetRequestContextChunkLoading?: boolean;
   prefetch?: () => void;
   // { antd: { main: ['Button'] } }
   usedExports?: {

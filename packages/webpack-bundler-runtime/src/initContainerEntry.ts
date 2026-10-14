@@ -1,4 +1,5 @@
 import { InitContainerEntryOptions, WebpackRequire } from './types';
+import { initAssetRequestContext } from './assetRequestContext';
 
 export function initContainerEntry(
   options: InitContainerEntryOptions,
@@ -10,7 +11,10 @@ export function initContainerEntry(
     shareScopeKey,
     remoteEntryInitOptions,
   } = options;
-  if (!webpackRequire.S) return;
+  if (!webpackRequire.S) {
+    initAssetRequestContext(webpackRequire, remoteEntryInitOptions);
+    return;
+  }
   if (
     !webpackRequire.federation ||
     !webpackRequire.federation.instance ||

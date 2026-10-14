@@ -14,6 +14,10 @@ declare const FEDERATION_OPTIMIZE_NO_SHARED: boolean;
 declare const FEDERATION_HAS_EXPOSES: boolean;
 
 export * from './types';
+export {
+  loadEntryWithRequest,
+  loadScriptEntryWithRequest,
+} from './assetRequestContext';
 
 const USE_REMOTE =
   typeof FEDERATION_OPTIMIZE_NO_REMOTE === 'boolean'
